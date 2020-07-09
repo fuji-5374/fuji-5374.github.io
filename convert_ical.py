@@ -9,6 +9,7 @@ from typing import Callable, Dict, Optional, Sequence, Tuple
 
 from icalendar import Calendar, Event
 
+CALENDER_NAME = "fuji-5374"
 EXCLUDE_HEADER = ["地区", "センター", "センター休止日"]
 
 # TODO:2020-07-08 この指定をしたくない...がいい方法が出なかったので
@@ -224,12 +225,17 @@ def main():
         # ディレクトリとファイル名生成
         ical_dir = Path("./ical/")
         ical_dir.mkdir(exist_ok=True)
-        filename = ical_dir / "fuji5374_{}.ical".format(gomi_pattern["地区"])
+        ical_name = CALENDER_NAME
+        cal_pattern = gomi_pattern["地区"]
+        filename = ical_dir / "{}_{}.ical".format(ical_name, cal_pattern)
 
         # パターンのカレンダーを作成
         cal = Calendar()
         cal.add("prodid", "-//fuji-5374//fuji-5374//JP")
         cal.add("version", "2.0")
+        cal.add("X-WR-TIMEZONE", "Asia/Tokyo")
+        cal.add("X-WR-CALNAME", "{} パターン:{}".format(ical_name, cal_pattern))
+        cal.add("X-WR-CALDESC", "{} パターン:{}".format(ical_name, cal_pattern))
 
         # パターンのごみカテゴリ事にicalイベント生成
         for gomi_name, gomi_events in gomi_pattern.items():
