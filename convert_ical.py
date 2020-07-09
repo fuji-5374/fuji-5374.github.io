@@ -19,7 +19,7 @@ GOMI_CALENER_START = date(2020, 4, 1)
 GOMI_CALENER_END = date(2021, 3, 31)
 
 
-def ajust_weeknum(n_s: int, n_q: int):
+def adjust_weeknum(n_s: int, n_q: int):
     """
     5374が扱う開始日付と、ごみカテゴリ記法の繰り返し表現を元に、ical繰り返しイベントの開始日に合わせる日付調整用の数値を生成
 
@@ -34,7 +34,7 @@ def ajust_weeknum(n_s: int, n_q: int):
     6
 
     # 7/1:4 > 7/4:7 = 3
-    >>> print(ajust_weeknum(4, 1))
+    >>> print(ajust_weeknum(4, 7))
     3
 
     """
@@ -44,9 +44,7 @@ def ajust_weeknum(n_s: int, n_q: int):
         return (7 - n_s) + n_q
 
 
-def gen_one_event(
-    name: str, category: str, center_dates: Sequence[Dict]
-) -> Sequence[Event]:
+def gen_one_event(name: str, category: str, center_dates: Dict) -> Sequence[Event]:
     """
     5374の不定期イベントを生成する
 
@@ -70,7 +68,7 @@ def gen_one_event(
 
 # TODO:2020-07-08 ここの戻り値はリストにする
 def gen_recurceve_event(
-    name: str, category: str, center_dates: Sequence[Dict]
+    name: str, category: str, center_dates: Dict
 ) -> Sequence[Event]:
     """
     5374の繰り返しイベントを生成する
@@ -92,7 +90,7 @@ def gen_recurceve_event(
         rcur_start_weeknum = int(event_startdate.strftime("%w")) + 1
 
         start_date = event_startdate + timedelta(
-            days=ajust_weeknum(rcur_start_weeknum, gomi_pattern_weeknum)
+            days=adjust_weeknum(rcur_start_weeknum, gomi_pattern_weeknum)
         )
 
         e_ical_rrule = copy(ical_rrule)
