@@ -10,6 +10,8 @@ from typing import Callable, Dict, Optional, Sequence, Tuple
 from icalendar import Calendar, Event
 
 CALENDER_NAME = "fuji-5374"
+EVENT_DESCRIPTIPM = "富士市5374 ごみのカレンダーと分別ルールをチェックしましょう！\n\nhttps://fuji.5374.jp"
+
 EXCLUDE_HEADER = ["地区", "センター", "センター休止日"]
 
 # TODO:2020-07-08 この指定をしたくない...がいい方法が出なかったので
@@ -61,6 +63,7 @@ def gen_one_event(
     event.add("dtstart", start_date)
     event.add("dtend", end_date)
     event.add("dtstamp", start_date)
+    event.add("description", EVENT_DESCRIPTIPM)
 
     return [event]
 
@@ -73,7 +76,6 @@ def gen_recurceve_event(
     5374の繰り返しイベントを生成する
 
     センターの休止期間を考慮して、二つの繰り返しイベントが生成される。
-
     """
 
     def _event_generate(
@@ -102,6 +104,7 @@ def gen_recurceve_event(
         e.add("dtend", start_date + timedelta(days=1))
         e.add("dtstamp", start_date)
         e.add("rrule", e_ical_rrule)
+        e.add("description", EVENT_DESCRIPTIPM)
 
         return e
 
