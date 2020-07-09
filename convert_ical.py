@@ -1,10 +1,11 @@
+# coding: utf-8
+
 import csv
 import re
 from copy import copy
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Callable, Optional, Tuple, Sequence, Dict
-from pprint import pprint
+from typing import Callable, Dict, Optional, Sequence, Tuple
 
 from icalendar import Calendar, Event
 
@@ -15,20 +16,23 @@ GOMI_CALENER_START = date(2020, 4, 1)
 GOMI_CALENER_END = date(2021, 3, 31)
 
 
-def youbi_zurashi(n_s, n_q):
+def ajust_weeknum(n_s: int, n_q: int):
     """
-    曜日をずらす数値をgetする
+    5374が扱う開始日付と、ごみカテゴリ記法の繰り返し表現を元に、ical繰り返しイベントの開始日に合わせる日付調整用の数値を生成
 
-    必要な物
-    ごみ開始日->ごみ開始日の曜日番号
-    繰り返しの曜日->曜日番号
+    date.timedeltaメソッドで利用する
 
+    曜日と曜日の並び番号は、スタートが日曜日, 日曜:1、月曜:2...土曜:7 となる
 
-    繰り返しはじめの日付決定用のスライドさせる日数
-    もしごみ開始日の曜日番号<=繰り返し番号
-    n?-ns
-    もしごみ開始日の曜日番号＞繰り返し番号
-    (7-ns)+n?
+    考え方として、n_sを開始日付の曜日番号, n_qを繰り返しイベントに設定する曜日の番号とする。
+
+    # 7/1:4 <= 7/7:3 = 6
+    >>> print(ajust_weeknum(4, 3))
+    6
+
+    # 7/1:4 > 7/4:7 = 3
+    >>> print(ajust_weeknum(4, 1))
+    3
 
     """
     if n_s <= n_q:
@@ -37,14 +41,14 @@ def youbi_zurashi(n_s, n_q):
         return (7 - n_s) + n_q
 
 
-# TODO:2020-07-08 ここの戻り値はリストにする。全部においてそうする
 def gen_one_event(
     name: str, category: str, center_dates: Sequence[Dict]
 ) -> Sequence[Event]:
-    """5374の不定期イベントを生成する
+    """
+    5374の不定期イベントを生成する
 
-    # センターの締まっている時間を考慮する
-    # - もしその時間にイベントを作ろうとしたら消す（繰り返しイベント的な物の範囲ができるか
+    8文字の数字を読み込んで、icalイベントに変換している。
+
     """
 
     start_date = datetime.strptime(category, "%Y%m%d").date()
@@ -64,13 +68,44 @@ def gen_one_event(
 def gen_recurceve_event(
     name: str, category: str, center_dates: Sequence[Dict]
 ) -> Sequence[Event]:
-    """5374の繰り返しイベントを生成する
+    """
+    5374の繰り返しイベントを生成する
 
-    # センターの締まっている時間を考慮する
-    # - もしその時間にイベントを作ろうとしたら消す（繰り返しイベント的な物の範囲ができるか
+    センターの休止期間を考慮して、二つの繰り返しイベントが生成される。
+
     """
 
-    youbi_set = {
+    def _event_generate(
+        event_startdate: date,
+        gomi_pattern_weeknum: int,
+        event_untiledate: date,
+        ical_rrule: dict,
+    ):
+        """
+        繰り返しイベントに必要な情報を元に、icalイベントの生成をする
+
+
+        """
+        rcur_start_weeknum = int(event_startdate.strftime("%w")) + 1
+
+        start_date = event_startdate + timedelta(
+            days=ajust_weeknum(rcur_start_weeknum, gomi_pattern_weeknum)
+        )
+
+        e_ical_rrule = copy(ical_rrule)
+        e_ical_rrule["until"] = event_untiledate
+
+        e = Event()
+        e.add("summary", name)
+        e.add("dtstart", start_date)
+        e.add("dtend", start_date + timedelta(days=1))
+        e.add("dtstamp", start_date)
+        e.add("rrule", e_ical_rrule)
+
+        return e
+
+    # icalフォーマットと、ここで利用する曜日の番号のセットを用意
+    week_map = {
         "日": ("SU", 1),
         "月": ("MO", 2),
         "火": ("TU", 3),
@@ -82,9 +117,9 @@ def gen_recurceve_event(
 
     if len(category) == 1:
         # 曜日のみの場合
-        youbi = category[0]
+        week_jp_fmt = category[0]
         # 曜日文字から、
-        ical_byday = youbi_set.get(youbi)[0]
+        ical_byday = week_map.get(week_jp_fmt)[0]
         ical_rrule = {
             "freq": "weekly",
             "wkst": "su",
@@ -94,85 +129,50 @@ def gen_recurceve_event(
 
     elif len(category) == 2:
         # 曜日 + 数字=第[数字]周の曜日 の場合
-        youbi = category[0]
-        syuume = category[1]
+        week_jp_fmt = category[0]
+        month_of_weeknum = category[1]
 
-        ical_byday = youbi_set.get(youbi)[0]
+        ical_byday = week_map.get(week_jp_fmt)[0]
         ical_rrule = {
             "freq": "monthly",
             "wkst": "su",
             "until": None,
-            "byday": syuume + ical_byday,
+            "byday": month_of_weeknum + ical_byday,
         }
 
     # センターの休止開始/終了日をdateオブジェクトに
     center_rest_startday = datetime.strptime(center_dates["休止開始日"], "%Y/%m/%d").date()
     center_rest_endday = datetime.strptime(center_dates["休止終了日"], "%Y/%m/%d").date()
 
-    kurikaesi_youbi_num = youbi_set.get(youbi)[1]
+    gomi_pattern_weeknum = week_map.get(week_jp_fmt)[1]
 
     # 年度のセンター休止期間を基準に二つの繰り返しイベントを作成
-
     # event1: ごみ開始日(+曜日までのプラス数日)->年末のセンター休止開始日
-
-    event1_gomi_rcur_start_youbi_num = int(GOMI_CALENER_START.strftime("%w")) + 1
-    event1_zurasu_num = youbi_zurashi(
-        event1_gomi_rcur_start_youbi_num, kurikaesi_youbi_num
+    event1 = _event_generate(
+        GOMI_CALENER_START, gomi_pattern_weeknum, center_rest_startday, ical_rrule
     )
-    event1_gomi_rrule_start_date = GOMI_CALENER_START + timedelta(
-        days=event1_zurasu_num
+    # event2: 年始のセンター休止終了日(+曜日までのプラス数日）->ごみカレンダー終了日
+    event2 = _event_generate(
+        center_rest_endday, gomi_pattern_weeknum, GOMI_CALENER_END, ical_rrule
     )
-
-    event1_ical_rrule = copy(ical_rrule)
-    event1_ical_rrule["until"] = center_rest_startday
-
-    event1 = Event()
-    event1.add("summary", name)
-    event1.add("dtstart", event1_gomi_rrule_start_date)
-    event1.add("dtend", event1_gomi_rrule_start_date + timedelta(days=1))
-    event1.add("dtstamp", event1_gomi_rrule_start_date)
-    event1.add("rrule", event1_ical_rrule)
-
-    # この期間の終了日（繰り返し機関の終わり）は、年末のセンター休止開始日まで
-
-    # ---
-
-    # evemt2.年始のセンター休止終了日(+曜日までのプラス数日）->ごみカレンダー終了日
-
-    event2_gomi_rcur_start_youbi_num = int(center_rest_endday.strftime("%w")) + 1
-    event2_zurasu_num = youbi_zurashi(
-        event2_gomi_rcur_start_youbi_num, kurikaesi_youbi_num
-    )
-    event2_gomi_rrule_start_date = center_rest_endday + timedelta(
-        days=event2_zurasu_num
-    )
-
-    # event2_gomi_end_date = datetime.strptime(center_dates["休止終了日"], "%Y/%m/%d").date()
-    event2_ical_rrule = copy(ical_rrule)
-    event2_ical_rrule["until"] = GOMI_CALENER_END
-
-    event2 = Event()
-
-    event2.add("summary", name)
-    event2.add("dtstart", event2_gomi_rrule_start_date)
-    event2.add("dtend", event2_gomi_rrule_start_date + timedelta(days=1))
-    event2.add("dtstamp", event2_gomi_rrule_start_date)
-    event2.add("rrule", event2_ical_rrule)
 
     return [event1, event2]
 
 
 def search_pattern(
     event_str: str,
-) -> Tuple[Optional[str], Optional[Callable[[str, str], Event]]]:
+) -> Tuple[Optional[str], Optional[Callable[[str, str], Sequence[Event]]]]:
 
     """
-    ごみのカレンダーのカテゴリ書式をパースして、icalに必要な情報の生成を行う関数を返す
+    ごみのカレンダーのカテゴリ記法を元に、文字列をパターンマッチさせて、マッチした文字列とicalに必要な情報の生成を行う関数を返す
 
     ごみのカレンダーの定義フォーマット:https://github.com/codeforkanazawa-org/5374/blob/master/LOCALIZE.md
+
+
     """
 
-    gomi_cal_paese_pattern_set = [
+    # パターンと処理する関数をセットにする。関数の部分がNoneはまだ未実装
+    gomi_category_patternset = [
         (r"^[月火水木金土日]", gen_recurceve_event),
         (r"^[月火水木金土日]\d", gen_recurceve_event),
         (r"^[月火水木金土日]:", None),
@@ -180,10 +180,10 @@ def search_pattern(
         (r"^\d{8}", gen_one_event),
     ]
 
-    for pattern, gen_event_func in gomi_cal_paese_pattern_set:
+    # regexでマッチさせて
+    for category_pattern, gen_event_func in gomi_category_patternset:
 
-        # 文字列をre.matchで先頭から当てる
-        matched = re.match(pattern, event_str)
+        matched = re.match(category_pattern, event_str)
         # 当たったら、その結果を返す
         if matched:
             return (matched.group(), gen_event_func)
